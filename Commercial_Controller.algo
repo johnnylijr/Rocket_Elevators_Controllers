@@ -1,0 +1,194 @@
+START
+
+//Code Written by Johnny
+
+SET Nbr_Elevators to 12 //number of elevators
+SET Nbr_Floors to -6 to 60 //number of floors
+SET Nbr_Basements to 6
+SET Nbr_Columns to 4 
+SET ElevatorPerColumn to Nbr_Elevators divided by Nbr_Columns
+SET MinimumFloor to -6 //6 basements
+SET MaximumFloor to 60
+SET Column_A to -6, to -1 AND 1 //think of floor 1 as RC
+SET Column_B to 2 to 20 AND 1
+SET Column_C to 21 to 40 AND 1
+SET Column_D to 41 to 60 AND 1
+
+DEFINE Battery USING nbr_Floors, nbr_Basements, nbr_Columns, elevatorPerColumn
+    Nbr_Floors: nbr_Floors
+    Nbr_Basements: nbr_Basements
+    Nbr_Columns: nbr_Columns
+    ElevatorPerColumn: elevatorPerColumn
+    MinimumFloor: minimumFloor
+    MaximumFloor: maximumFloor
+    Column: column
+
+    IF nbr_Basements is greater than 0 THEN
+        SET minimumFloor to negative nbr_Basements
+    ELSE IF nbr_Basements is equal to 0 THEN
+        SET minimumFloor to 1
+    
+    SEQUENCE CreateColumnList USING nbr_Columns AND elevatorPerColumn
+
+ENDDEFINE
+
+DEFINE Elevator
+    ID: id
+    SET ElevatorStatus to idle
+    SET ElevatorDoor to close
+    SET Elevator_Direction to null
+    Set Elevator_Position to 1
+    SET Door to close
+    SET MaxWeight to 2000 lbs
+    SET Current_Weight to 0 lb
+    SET Floor_Button_Nbr to 66 //number of buttons for floors within elevator
+    SET Door_Button to 2 //buttons to control door
+        DEFINE Door_Button
+        INIT Open door
+        INIT Close door
+        ENDDEFINE
+ENDDEFINE
+
+DEFINE Column USING id AND Status
+    ID: id
+    Status: idle
+    ElevatorButtonList: EMPTY List
+    ElevatorList: SET to EMPTY List
+    SEQUENCE CreateElevatorList USING Nbr_Elevators
+        SET ElevatorCount equal to 12
+            FOR EACH Elevator of Nbr_Elevators
+                SET Elevator (id: ElevatorCount) to list
+                    ID: ElevatorCount   
+                    ElevatorStatus: idle
+                    ElevatorDoor: close
+                    Elevator_Position: 1
+            ENDFOR
+    ENDSEQUENCE        
+ENDDEFINE
+
+SEQUENCE Elevator
+    INIT Elevator_Position to 1 //the floor where the elevator is
+    INIT Button_Pressed to false
+    IF Button_Pressed = true THEN
+        CALL SEQUENCE BestElevator
+        CALL SEQUENCE BestColumn
+        CALL SEQUENCE Elevator_Direction_Priority
+        CALL SEQUENCE Moving
+ENDSEQUENCE 
+
+SEQUENCE ElevatorColumn_Priority USING nbr_Floors
+    WHILE Button_Pressed = true 
+        CALL SEQUENCE BestColumn RETURN Column
+        CALL SEQUENCE BestElevator of BestColumn RETURN Elevator
+ENDSEQUENCE
+
+SEQUENCE BestColumn
+    CASE Requested_Floor OF
+        smaller than 1 OR equal to 1: 
+            RETURN Column_A
+        smaller than 21 AND greater than 1 OR equal to 1:
+            RETURN Column_B
+        smaller than 41 AND greater than 20 OR equal to 1:
+            RETURN Column_C
+        smaller than 61 AND greater than 40 OR equal to 1:
+            RETURN
+    ENDCASE
+ENDSEQUENCE   
+
+SEQUENCE BestElevator USING Floor AND Requested_Floor AND Requested_Direction
+    INIT Current_Elevator
+    INIT Current_Floor
+    INIT Other_Floor
+    READ Elevator_Direction
+    READ Elevator_Position
+    READ Requested_Floor
+    READ Requested_Direction
+    FOR EACH Elevator in ElevatorList
+        IF Button_Pressed is UP THEN   
+            IF ElevatorStatus is idle 
+               AND Elevator_Position is smaller than Requested_Floor THEN
+                CALL SEQUENCE Move_Up
+            ELSE IF ElevatorStatus is Moving AND Elevator_Direction is Up
+               AND Elevator_Position is smaller than Requested_Floor THEN
+                CALL SEQUENCE Move_Up
+        ELSE IF Button_Pressed is Down THEN
+            IF ElevatorStatus is idle 
+               AND Elevator_Position is greater than Requested_Floor THEN
+                CALL SEQUENCE Move_Down
+            ELSE IF ElevatorStatus is Moving AND Elevator_Direction is Down
+               AND Elevator_Position is greater than Requested_Floor THEN
+                CALL SEQUENCE Move_Down
+        ENDIF
+    ENDFOR
+ENDSEQUENCE
+
+SEQUENCE Moving
+    READ Requested_Floor //check on which floor button is pressed
+        IF Elevator_Position smaller than Requested_Floor THEN
+            Elevator_Position INCREMENT by 1  //move elevator to floor where button is pressed
+        ELSE IF Elevator_Position greater than Requested_Floor THEN
+            Elevator_Position INCREMENT by -1  //move elevator to floor where button is pressed
+        ENDIF
+ENDSEQUENCE
+
+SEQUENCE Elevator_Resting_Position USING ElevatorStatus and ElevatorPerColumn
+    IF Elevator in Column_C Status is idle AND is greater than 10 minutes THEN
+        RETURN to floor 30
+    ELSE IF ElevatorStatus is idle AND is greater than 10 minutes THEN
+        RETURN to floor 1
+ENDSEQUENCE
+        
+SEQUENCE Door
+    IF Button_Pressed = true
+        WHEN Elevator_Position equal Requested_Floor
+            SET Door = open //Open Door
+    ELSE
+            SET Door = close
+    ENDIF
+ENDSEQUENCE
+
+SEQUENCE Requested_Floor // Which floor button is pressed
+    IF Button_Nbr greater than Elevator_Position THEN
+        CALL SEQUENCE Move_Up
+    ELSE IF Button_Nbr smaller than Elevator_Position THEN
+        CALL SEQUENCE Move_Down
+    ELSE CALL SEQUENCE Door USING Button_Nbr // When Button_Nbr = Elevator_Position, door will open
+    ENDIF
+ENDSEQUENCE
+
+SEQUENCE Move_Up
+    READ Button_Nbr //check which number button is pressed
+        WHILE Button_Nbr greater than Elevator_Position
+            Elevator_Position INCREMENT by 1 //move elevator to floor where button is pressed
+
+ENDSEQUENCE
+
+SEQUENCE Move_Down
+    READ Button_Nbr //check which number button is pressed
+        WHILE Button_Nbr smaller than Elevator_Position
+            Elevator_Position INCREMENT by -1  //move elevator to floor where button is pressed
+ENDSEQUENCE
+
+SEQUENCE Elevator_Direction_Priority using Requested_Floor
+    CASE Requested_Floor smaller than Elevator_Position
+            AND Requested_Floor equal UP AND Elevator_Direction equal UP:
+        CALL SEQUENCE Move_Up
+         Requested_Floor greater than Elevator_Position
+            AND Requested_Floor equal DOWN AND Elevator_Direction equal DOWN:
+        CALL SEQUENCE Move_Down
+    ENDCASE
+ENDSEQUENCE
+
+SEQUENCE Wait //door will wait 5 seconds before closing
+    INIT Timer = 0
+    IF Door = true
+        REPEAT 
+            Timer INCREMENT by 1
+        UNTIL Timer smaller than 5    
+ENDSEQUENCE
+
+SEQUENCE FloorDisplay
+    PRINT Elevator_Position to INSTANTIATE FloorDisplay
+ENDSEQUENCE
+
+END
